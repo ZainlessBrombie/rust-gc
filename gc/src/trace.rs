@@ -11,6 +11,26 @@ use std::sync::atomic::{
     AtomicU64, AtomicU8, AtomicUsize,
 };
 
+/// This rule implements the trace methods with empty implementations.
+///
+/// Use this for marking types as not containing any `Trace` types.
+#[macro_export]
+macro_rules! unsafe_empty_trace {
+    () => {
+        #[inline]
+        unsafe fn trace(&self) {}
+        #[inline]
+        unsafe fn root(&self) {}
+        #[inline]
+        unsafe fn unroot(&self) {}
+        #[inline]
+        fn finalize_glue(&self) {
+            $crate::Finalize::finalize(self)
+        }
+    };
+}
+
+
 /// The Finalize trait. Can be specialized for a specific type to define
 /// finalization logic for that type.
 pub trait Finalize {
@@ -41,24 +61,26 @@ pub unsafe trait Trace: Finalize {
     fn finalize_glue(&self);
 }
 
-/// This rule implements the trace methods with empty implementations.
-///
-/// Use this for marking types as not containing any `Trace` types.
-#[macro_export]
-macro_rules! unsafe_empty_trace {
-    () => {
-        #[inline]
-        unsafe fn trace(&self) {}
-        #[inline]
-        unsafe fn root(&self) {}
-        #[inline]
-        unsafe fn unroot(&self) {}
-        #[inline]
-        fn finalize_glue(&self) {
-            $crate::Finalize::finalize(self)
-        }
-    };
+pub unsafe trait GcDeadEnd {
+
 }
+
+unsafe impl <T> GcDeadEnd for Box<T> where T: GcDeadEnd {
+
+}
+
+unsafe impl <T> GcDeadEnd for Option<T> where T: GcDeadEnd {
+
+}
+
+unsafe impl <T> Trace for Rc<T> where T: GcDeadEnd {
+    unsafe_empty_trace!();
+}
+
+impl <T> Finalize for Rc<T> where T: GcDeadEnd {}
+
+unsafe impl <T> GcDeadEnd for &'static T {}
+
 
 /// This rule implements the trace method.
 ///
@@ -108,15 +130,11 @@ macro_rules! custom_trace {
     };
 }
 
-impl<T: ?Sized> Finalize for &'static T {}
-unsafe impl<T: ?Sized> Trace for &'static T {
-    unsafe_empty_trace!();
-}
-
 macro_rules! simple_empty_finalize_trace {
     ($($T:ty),*) => {
         $(
             impl Finalize for $T {}
+            unsafe impl GcDeadEnd for $T {  }
             unsafe impl Trace for $T { unsafe_empty_trace!(); }
         )*
     }
@@ -141,8 +159,6 @@ simple_empty_finalize_trace![
     f64,
     char,
     String,
-    Box<str>,
-    Rc<str>,
     Path,
     PathBuf,
     NonZeroIsize,
@@ -257,13 +273,6 @@ type_arg_tuple_based_finalized_trace_impls![
     (A, B, C, D, E, F, G, H, I, J, K);
     (A, B, C, D, E, F, G, H, I, J, K, L);
 ];
-
-impl<T: Trace + ?Sized> Finalize for Rc<T> {}
-unsafe impl<T: Trace + ?Sized> Trace for Rc<T> {
-    custom_trace!(this, {
-        mark(&**this);
-    });
-}
 
 impl<T: Trace + ?Sized> Finalize for Box<T> {}
 unsafe impl<T: Trace + ?Sized> Trace for Box<T> {
