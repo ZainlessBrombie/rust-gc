@@ -72,7 +72,7 @@ pub(crate) struct GcBoxHeader {
     marked: Cell<bool>,
 }
 
-pub(crate) struct GcBox<T: Trace + ?Sized + 'static> {
+pub struct GcBox<T: Trace + ?Sized + 'static> {
     header: GcBoxHeader,
     data: T,
 }
@@ -82,7 +82,7 @@ impl<T: Trace> GcBox<T> {
     /// and appends it to the thread-local `GcBox` chain.
     ///
     /// A `GcBox` allocated this way starts its life rooted.
-    pub(crate) fn new(value: T) -> NonNull<Self> {
+    pub fn new(value: T) -> NonNull<Self> {
         GC_STATE.with(|st| {
             let mut st = st.borrow_mut();
 

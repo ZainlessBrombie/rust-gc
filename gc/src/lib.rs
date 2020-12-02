@@ -3,11 +3,11 @@
 //! The `Gc<T>` type provides shared ownership of an immutable value.
 //! It is marked as non-sendable because the garbage collection only occurs
 //! thread-locally.
-
 #![cfg_attr(
     feature = "nightly",
     feature(coerce_unsized, optin_builtin_traits, unsize, specialization)
 )]
+#![feature(specialization)]
 
 use crate::gc::GcBox;
 use std::alloc::Layout;

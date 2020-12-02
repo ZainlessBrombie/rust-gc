@@ -65,19 +65,29 @@ pub unsafe trait GcDeadEnd {
 
 }
 
-unsafe impl <T> GcDeadEnd for Box<T> where T: GcDeadEnd {
+unsafe impl <T: GcDeadEnd> GcDeadEnd for Box<T> {
 
 }
 
-unsafe impl <T> GcDeadEnd for Option<T> where T: GcDeadEnd {
+unsafe impl <T: GcDeadEnd> GcDeadEnd for Option<T> {
 
 }
 
-unsafe impl <T> Trace for Rc<T> where T: GcDeadEnd {
+unsafe impl <T: GcDeadEnd + Trace + Finalize + ?Sized> Trace for Rc<T> {
     unsafe_empty_trace!();
 }
 
-impl <T> Finalize for Rc<T> where T: GcDeadEnd {}
+unsafe impl <T: GcDeadEnd + Trace + Finalize + ?Sized> Trace for Box<T> {
+    unsafe_empty_trace!();
+}
+
+impl <T: GcDeadEnd + Trace + Finalize + ?Sized> Finalize for Rc<T> {
+
+}
+impl <T: GcDeadEnd + Trace + Finalize + ?Sized> Finalize for Box<T> {
+
+}
+
 
 unsafe impl <T> GcDeadEnd for &'static T {}
 
@@ -130,6 +140,48 @@ macro_rules! custom_trace {
     };
 }
 
+macro_rules! custom_trace_default {
+    ($this:ident, $body:expr) => {
+        #[inline]
+        default unsafe fn trace(&self) {
+            #[inline]
+            unsafe fn mark<T: $crate::Trace + ?Sized>(it: &T) {
+                $crate::Trace::trace(it);
+            }
+            let $this = self;
+            $body
+        }
+        #[inline]
+        default unsafe fn root(&self) {
+            #[inline]
+            unsafe fn mark<T: $crate::Trace + ?Sized>(it: &T) {
+                $crate::Trace::root(it);
+            }
+            let $this = self;
+            $body
+        }
+        #[inline]
+        default unsafe fn unroot(&self) {
+            #[inline]
+            unsafe fn mark<T: $crate::Trace + ?Sized>(it: &T) {
+                $crate::Trace::unroot(it);
+            }
+            let $this = self;
+            $body
+        }
+        #[inline]
+        default fn finalize_glue(&self) {
+            $crate::Finalize::finalize(self);
+            #[inline]
+            fn mark<T: $crate::Trace + ?Sized>(it: &T) {
+                $crate::Trace::finalize_glue(it);
+            }
+            let $this = self;
+            $body
+        }
+    };
+}
+
 macro_rules! simple_empty_finalize_trace {
     ($($T:ty),*) => {
         $(
@@ -140,8 +192,11 @@ macro_rules! simple_empty_finalize_trace {
     }
 }
 
+//unsafe impl GcDeadEnd for str {}
+
 simple_empty_finalize_trace![
     (),
+    str,
     bool,
     isize,
     usize,
@@ -276,7 +331,14 @@ type_arg_tuple_based_finalized_trace_impls![
 
 impl<T: Trace + ?Sized> Finalize for Box<T> {}
 unsafe impl<T: Trace + ?Sized> Trace for Box<T> {
-    custom_trace!(this, {
+    custom_trace_default!(this, {
+        mark(&**this);
+    });
+}
+
+impl<T: Trace + ?Sized> Finalize for Rc<T> {}
+unsafe impl<T: Trace + ?Sized> Trace for Rc<T> {
+    custom_trace_default!(this, {
         mark(&**this);
     });
 }
